@@ -15,7 +15,8 @@ This is a research/decision-support tool. **It is not financial advice.**
 - **Frontend** – Vite + React + TypeScript + Tailwind + Recharts
 - **Backend** – Hono (typed) on Node
 - **Shared** – Pure TypeScript finance + regression modules, unit tested with Vitest
-- **Storage** – Postgres (with an in-memory fallback for local dev)
+- **Storage** – Postgres for tracked tickers and historical price bars (with
+  an in-memory fallback for local dev)
 - **Data** – Pluggable `MarketDataProvider` interface. Default implementation:
   Yahoo Finance via `yahoo-finance2`.
 
@@ -83,4 +84,9 @@ Create the database once with:
 psql -h /tmp -U postgres -d postgres -c "CREATE DATABASE market_trends;"
 ```
 
-The server creates the `tracked_tickers` table on first run.
+The server creates the `tracked_tickers` and `market_price_bars` tables on
+first run. Historical price bars are read from storage before calling the
+market data provider again; latest quotes remain short-lived in-memory cache.
+Daily and weekly bars are stored separately. Trend views that use weekly or
+monthly regression can request weekly provider candles so long lookbacks are
+not limited by eToro's shorter daily candle history.

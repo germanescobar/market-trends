@@ -189,6 +189,13 @@ function AssetDetailContent({
         </div>
       </header>
 
+      {snapshot.dataWarning && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {snapshot.dataWarning}
+        </div>
+      )}
+
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Current price"

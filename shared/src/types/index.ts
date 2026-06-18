@@ -119,6 +119,8 @@ export interface TickerSnapshot {
   ticker: string;
   name?: string;
   currency?: string;
+  /** Warning about provider coverage or data quality, if applicable. */
+  dataWarning?: string;
   quote?: Quote;
   series: PriceSeries;
   /** Map of lookback -> regression at the requested frequency. */

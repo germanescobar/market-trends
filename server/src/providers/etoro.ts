@@ -12,6 +12,7 @@ import {
   type GetHistoricalPricesParams,
   type MarketDataProvider,
   type PriceBar,
+  type PriceFrequency,
   type PriceSeries,
   type Quote,
 } from "@market-trends/shared";
@@ -19,6 +20,7 @@ import { randomUUID } from "node:crypto";
 
 const BASE_URL = "https://public-api.etoro.com/api/v1";
 const DEFAULT_DAILY_CANDLES = 1000;
+const DEFAULT_WEEKLY_CANDLES = 1000;
 
 interface EtoroProviderOptions {
   apiKey: string;
@@ -81,13 +83,15 @@ export class EtoroProvider implements MarketDataProvider {
 
   async getHistoricalPrices({
     ticker,
+    frequency = "daily",
     startDate,
     endDate,
   }: GetHistoricalPricesParams): Promise<PriceSeries> {
     const instrument = await this.resolveInstrument(ticker);
-    const count = calculateDailyCandleCount(startDate, endDate);
+    const candleFrequency = toEtoroCandleFrequency(frequency);
+    const count = calculateCandleCount(candleFrequency.frequency, startDate, endDate);
     const json = await this.request<CandlesResponse>(
-      `/market-data/instruments/${instrument.id}/history/candles/asc/OneDay/${count}`,
+      `/market-data/instruments/${instrument.id}/history/candles/asc/${candleFrequency.interval}/${count}`,
     );
     const candles = json.candles?.flatMap((group) => group.candles ?? []) ?? [];
     const bars = candles
@@ -121,7 +125,7 @@ export class EtoroProvider implements MarketDataProvider {
       startDate: first.date,
       endDate: last.date,
       source: this.name,
-      frequency: "daily",
+      frequency: candleFrequency.frequency,
     };
   }
 
@@ -202,13 +206,27 @@ function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
 }
 
-function calculateDailyCandleCount(startDate?: string, endDate?: string): number {
-  if (!startDate) return DEFAULT_DAILY_CANDLES;
+function toEtoroCandleFrequency(frequency: PriceFrequency): {
+  frequency: PriceFrequency;
+  interval: "OneDay" | "OneWeek";
+} {
+  if (frequency === "daily") return { frequency: "daily", interval: "OneDay" };
+  return { frequency: "weekly", interval: "OneWeek" };
+}
+
+function calculateCandleCount(
+  frequency: PriceFrequency,
+  startDate?: string,
+  endDate?: string,
+): number {
+  const fallback = frequency === "daily" ? DEFAULT_DAILY_CANDLES : DEFAULT_WEEKLY_CANDLES;
+  if (!startDate) return fallback;
   const start = Date.parse(startDate);
   const end = endDate ? Date.parse(endDate) : Date.now();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return DEFAULT_DAILY_CANDLES;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return fallback;
   const days = Math.ceil((end - start) / 86_400_000) + 10;
-  return Math.min(Math.max(days, 1), DEFAULT_DAILY_CANDLES);
+  const bars = frequency === "daily" ? days : Math.ceil(days / 7) + 2;
+  return Math.min(Math.max(bars, 1), fallback);
 }
 
 function getRateInstrumentId(rate: EtoroRate): number | undefined {

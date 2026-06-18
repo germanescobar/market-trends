@@ -18,6 +18,7 @@ const storage = createStorage();
 const analytics = new AnalyticsService(provider, {
   ttlSeconds,
   defaultFrequency: "monthly",
+  storage,
 });
 
 const app = buildApp({ storage, analytics });

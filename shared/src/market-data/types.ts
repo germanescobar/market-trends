@@ -7,9 +7,12 @@
  */
 
 import type { PriceSeries, Quote } from "../types/index.js";
+import type { PriceFrequency } from "../types/index.js";
 
 export interface GetHistoricalPricesParams {
   ticker: string;
+  /** Provider candle frequency to fetch. Defaults to daily when omitted. */
+  frequency?: PriceFrequency;
   /** ISO-8601 date string (YYYY-MM-DD). */
   startDate?: string;
   /** ISO-8601 date string (YYYY-MM-DD). Defaults to today. */

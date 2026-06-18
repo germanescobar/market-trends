@@ -216,8 +216,12 @@ function DashboardRow({
   if (!snap) {
     return (
       <TableRow>
-        <TableCell colSpan={10} className="text-sm text-muted-foreground">
+        <TableCell className="font-medium">{ticker.ticker}</TableCell>
+        <TableCell colSpan={8} className="text-sm text-muted-foreground">
           {ticker.ticker}: no data
+        </TableCell>
+        <TableCell className="text-right">
+          <RemoveTickerButton ticker={ticker.ticker} onRemove={onRemove} />
         </TableCell>
       </TableRow>
     );
@@ -226,8 +230,11 @@ function DashboardRow({
     return (
       <TableRow>
         <TableCell className="font-medium">{ticker.ticker}</TableCell>
-        <TableCell colSpan={9} className="text-sm text-destructive">
+        <TableCell colSpan={8} className="text-sm text-destructive">
           {snap.error}
+        </TableCell>
+        <TableCell className="text-right">
+          <RemoveTickerButton ticker={ticker.ticker} onRemove={onRemove} />
         </TableCell>
       </TableRow>
     );
@@ -243,9 +250,14 @@ function DashboardRow({
   return (
     <TableRow>
       <TableCell className="font-medium">
-        <Link to={`/ticker?symbol=${encodeURIComponent(ticker.ticker)}`} className="hover:underline">
-          {ticker.ticker}
-        </Link>
+        <span className="inline-flex items-center gap-1">
+          <Link to={`/ticker?symbol=${encodeURIComponent(ticker.ticker)}`} className="hover:underline">
+            {ticker.ticker}
+          </Link>
+          {snap.dataWarning && (
+            <InfoTip text={snap.dataWarning} className="text-amber-600" />
+          )}
+        </span>
       </TableCell>
       <TableCell className="text-muted-foreground">
         {snap.name ?? ticker.name ?? "—"}
@@ -274,16 +286,28 @@ function DashboardRow({
         {ticker.lastUpdated ? new Date(ticker.lastUpdated).toLocaleString() : "—"}
       </TableCell>
       <TableCell className="text-right">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onClick={() => onRemove(ticker.ticker)}
-          aria-label={`Remove ${ticker.ticker}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        <RemoveTickerButton ticker={ticker.ticker} onRemove={onRemove} />
       </TableCell>
     </TableRow>
+  );
+}
+
+function RemoveTickerButton({
+  ticker,
+  onRemove,
+}: {
+  ticker: string;
+  onRemove: (ticker: string) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+      onClick={() => onRemove(ticker)}
+      aria-label={`Remove ${ticker}`}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
   );
 }
