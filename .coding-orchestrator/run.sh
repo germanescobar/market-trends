@@ -5,14 +5,15 @@
 # Starts the Hono API (server/) and the Vite web app (web/) together. The web
 # dev server proxies /api to the API, so opening the web URL is enough in dev.
 #
-# Ports are derived from Controller's CLIENT_BASE_PORT / API_BASE_PORT / PORT_OFFSET,
-# matching what setup.sh wrote into .env. Ctrl-C stops both processes.
+# Ports are derived from this project's native defaults plus Controller's
+# PORT_OFFSET, matching what setup.sh wrote into .env. Ctrl-C stops both
+# processes.
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
-# ── ports (validate before arithmetic; Controller exports these) ──────────────
-API_BASE_PORT="${API_BASE_PORT:-3100}"
-CLIENT_BASE_PORT="${CLIENT_BASE_PORT:-4500}"
+# ── ports (validate before arithmetic; Controller exports PORT_OFFSET) ────────
+API_BASE_PORT="${MARKET_TRENDS_API_BASE_PORT:-8987}"
+CLIENT_BASE_PORT="${MARKET_TRENDS_WEB_BASE_PORT:-5273}"
 OFFSET="${PORT_OFFSET:-0}"
 
 if ! [[ "$API_BASE_PORT" =~ ^[0-9]+$ ]]; then

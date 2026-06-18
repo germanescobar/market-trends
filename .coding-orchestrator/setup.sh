@@ -13,9 +13,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
-# ── ports (Controller provides these; validate before doing arithmetic) ───────
-API_BASE_PORT="${API_BASE_PORT:-3100}"
-CLIENT_BASE_PORT="${CLIENT_BASE_PORT:-4500}"
+# ── ports (Controller provides PORT_OFFSET; validate before arithmetic) ───────
+API_BASE_PORT="${MARKET_TRENDS_API_BASE_PORT:-8987}"
+CLIENT_BASE_PORT="${MARKET_TRENDS_WEB_BASE_PORT:-5273}"
 OFFSET="${PORT_OFFSET:-0}"
 
 if ! [[ "$API_BASE_PORT" =~ ^[0-9]+$ ]]; then
