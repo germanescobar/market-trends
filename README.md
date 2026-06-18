@@ -61,7 +61,10 @@ Server:
 - `PORT` – API port (default `8987`)
 - `DATABASE_URL` – Postgres connection string. If unset, the server uses an
   in-memory store (data is lost on restart).
-- `MARKET_DATA_PROVIDER` – `yahoo` (default) | `stub`
+- `MARKET_DATA_PROVIDER` – `yahoo` (default) | `etoro` | `alphavantage` | `stub`
+- `ALPHAVANTAGE_API_KEY` – required when `MARKET_DATA_PROVIDER=alphavantage`.
+  Provides native split/dividend-adjusted closes; the free tier is capped at
+  25 requests/day, so it relies on the storage/cache layer for repeat reads.
 - `CACHE_TTL_SECONDS` – cache price responses (default `3600`)
 
 Web:
