@@ -1,5 +1,6 @@
 import type { MarketDataProvider } from "@market-trends/shared";
 import { createStubProvider } from "@market-trends/shared";
+import { EtoroProvider } from "./etoro.js";
 import { YahooFinanceProvider } from "./yahoo.js";
 
 /** Build a provider based on env. */
@@ -8,6 +9,11 @@ export function createProvider(): MarketDataProvider {
   switch (which) {
     case "yahoo":
       return new YahooFinanceProvider();
+    case "etoro":
+      return new EtoroProvider({
+        apiKey: process.env.ETORO_API_KEY ?? "",
+        userKey: process.env.ETORO_USER_KEY ?? "",
+      });
     case "stub":
       return createStubProvider({
         drift: 0.08,
