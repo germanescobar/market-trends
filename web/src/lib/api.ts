@@ -3,9 +3,6 @@
  * base path; in dev Vite proxies these to the server (see vite.config.ts).
  */
 import type {
-  BacktestInput,
-  BacktestResult,
-  BacktestStrategy,
   LogTrendSeries,
   LookbackYears,
   PriceFrequency,
@@ -93,9 +90,4 @@ export const api = {
     );
   },
 
-  backtest: (input: BacktestInput & { strategy: BacktestStrategy }) =>
-    jsonFetch<BacktestResult>(`${BASE}/backtest`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
 };

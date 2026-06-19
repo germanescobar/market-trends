@@ -57,44 +57,33 @@ describe("performance metrics", () => {
 });
 
 describe("staircase allocation", () => {
-  it("returns 100% deployment for very negative z-scores", () => {
+  it("returns strong-buy label for very negative z-scores", () => {
     const a = resolveAllocation(-3, DEFAULT_STAIRCASE);
     expect(a.label).toBe("strong-buy");
-    expect(a.deployment).toBe(1);
   });
 
-  it("returns 0% deployment for very positive z-scores", () => {
+  it("returns strong-sell label for very positive z-scores", () => {
     const a = resolveAllocation(3, DEFAULT_STAIRCASE);
-    expect(a.label).toBe("hold-cash");
-    expect(a.deployment).toBe(0);
+    expect(a.label).toBe("strong-sell");
   });
 
   it("matches the documented buckets", () => {
-    const cases: Array<[number, number, string]> = [
-      [-2.5, 1, "strong-buy"],
-      [-1.5, 0.75, "buy-aggressive"],
-      [-0.5, 0.6, "buy-moderate"],
-      [0.5, 0.4, "normal-dca"],
-      [1.5, 0.2, "buy-less"],
-      [2.5, 0, "hold-cash"],
+    const cases: Array<[number, string]> = [
+      [-2.5, "strong-buy"],
+      [-1.5, "buy"],
+      [-0.5, "buy-moderate"],
+      [0.5, "sell-moderate"],
+      [1.5, "sell"],
+      [2.5, "strong-sell"],
     ];
-    for (const [z, expected, label] of cases) {
+    for (const [z, label] of cases) {
       const a = resolveAllocation(z, DEFAULT_STAIRCASE);
-      expect(a.deployment).toBeCloseTo(expected, 10);
       expect(a.label).toBe(label);
     }
   });
 
-  it("clamps user rules to [0, 1]", () => {
-    const bad = resolveAllocation(0, [
-      {
-        zMin: -Infinity,
-        zMax: Infinity,
-        label: "normal-dca",
-        description: "bad",
-        allocation: 5,
-      },
-    ]);
-    expect(bad.deployment).toBe(1);
+  it("falls back to sell-moderate when no rule matches", () => {
+    const a = resolveAllocation(0, []);
+    expect(a.label).toBe("sell-moderate");
   });
 });

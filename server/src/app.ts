@@ -2,11 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import {
-  type BacktestInput,
-  type BacktestStrategy,
   type LookbackYears,
   type PriceFrequency,
-  runBacktest,
 } from "@market-trends/shared";
 import type { AnalyticsService } from "./analytics.js";
 import type { Storage } from "./storage/types.js";
@@ -150,22 +147,6 @@ export function buildApp({ storage, analytics }: Deps) {
       }),
     );
     return c.json({ rows });
-  });
-
-  // ---- Backtest ----
-  app.post("/api/backtest", async (c) => {
-    const body = await c.req.json<BacktestInput & { strategy?: BacktestStrategy }>();
-    const strategy: BacktestStrategy = body.strategy ?? "trend-staircase";
-    const ticker = body.ticker?.toUpperCase();
-    if (!ticker) return c.json({ error: "ticker is required" }, 400);
-    try {
-      const series = await analytics.getSeries(ticker, body.startDate, body.endDate);
-      const result = runBacktest(body, series, strategy);
-      return c.json(result);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown error";
-      return c.json({ error: message }, 400);
-    }
   });
 
   return app;

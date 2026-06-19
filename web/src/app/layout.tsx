@@ -9,7 +9,6 @@ const NAV = [
   { to: "/", label: "Dashboard" },
   { to: "/ticker", label: "Asset detail" },
   { to: "/compare", label: "Compare" },
-  { to: "/simulator", label: "Strategy simulator" },
 ];
 
 export function AppLayout() {

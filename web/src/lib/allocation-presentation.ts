@@ -6,11 +6,11 @@ import type { AllocationLabel } from "@market-trends/shared";
 
 export const ALLOCATION_LABELS: Record<AllocationLabel, string> = {
   "strong-buy": "Strong buy",
-  "buy-aggressive": "Buy aggressive",
+  buy: "Buy",
   "buy-moderate": "Buy moderate",
-  "normal-dca": "Normal DCA",
-  "buy-less": "Buy less",
-  "hold-cash": "Hold cash",
+  "sell-moderate": "Sell moderate",
+  sell: "Sell",
+  "strong-sell": "Strong sell",
 };
 
 export function allocationTone(
@@ -18,13 +18,12 @@ export function allocationTone(
 ): "bull" | "bear" | "neutral" {
   switch (label) {
     case "strong-buy":
-    case "buy-aggressive":
+    case "buy":
     case "buy-moderate":
       return "bull";
-    case "hold-cash":
-    case "buy-less":
+    case "strong-sell":
+    case "sell":
+    case "sell-moderate":
       return "bear";
-    case "normal-dca":
-      return "neutral";
   }
 }

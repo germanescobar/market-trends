@@ -181,7 +181,6 @@ export function DashboardPage() {
                     </span>
                   </TableHead>
                   <TableHead>Signal</TableHead>
-                  <TableHead className="text-right">Deployment</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead />
                 </TableRow>
@@ -217,7 +216,7 @@ function DashboardRow({
     return (
       <TableRow>
         <TableCell className="font-medium">{ticker.ticker}</TableCell>
-        <TableCell colSpan={8} className="text-sm text-muted-foreground">
+        <TableCell colSpan={7} className="text-sm text-muted-foreground">
           {ticker.ticker}: no data
         </TableCell>
         <TableCell className="text-right">
@@ -230,7 +229,7 @@ function DashboardRow({
     return (
       <TableRow>
         <TableCell className="font-medium">{ticker.ticker}</TableCell>
-        <TableCell colSpan={8} className="text-sm text-destructive">
+        <TableCell colSpan={7} className="text-sm text-destructive">
           {snap.error}
         </TableCell>
         <TableCell className="text-right">
@@ -242,10 +241,6 @@ function DashboardRow({
 
   const trend = snap.defaultTrend;
   const tone = deviationTone(trend.deviationPercent);
-  const deployColor =
-    trend.lastZScore <= -1 ? "bull"
-    : trend.lastZScore >= 1 ? "bear"
-    : "neutral";
 
   return (
     <TableRow>
@@ -278,9 +273,6 @@ function DashboardRow({
         <Badge variant={allocationTone(snap.allocation.label)}>
           {ALLOCATION_LABELS[snap.allocation.label]}
         </Badge>
-      </TableCell>
-      <TableCell className={`text-right text-mono text-${deployColor}`}>
-        {formatPercent(snap.allocation.deployment, { sign: false, digits: 0 })}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {ticker.lastUpdated ? new Date(ticker.lastUpdated).toLocaleString() : "—"}

@@ -233,16 +233,13 @@ function AssetDetailContent({
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             Allocation suggestion
-            <InfoTip text="Staircase model that maps the current z-score to a suggested deployment of planned cash. Tunable on the Strategy Simulator page." />
+            <InfoTip text="Staircase model that maps the current z-score to a qualitative signal." />
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3 pb-6">
           <Badge variant={allocationTone(snapshot.allocation.label)} className="text-sm">
             {ALLOCATION_LABELS[snapshot.allocation.label]}
           </Badge>
-          <span className="text-mono text-lg font-semibold">
-            {formatPercent(snapshot.allocation.deployment, { sign: false, digits: 0 })} of cash
-          </span>
           <p className="basis-full text-sm text-muted-foreground">
             {snapshot.allocation.description}
           </p>
@@ -390,13 +387,13 @@ function LookbackTile({ label, regression }: { label: string; regression: LogTre
   );
 }
 
-const STAIRCASE_ROWS: Array<{ range: string; label: AllocationLabel; alloc: number }> = [
-  { range: "z ≤ −2", label: "strong-buy", alloc: 1.0 },
-  { range: "−2 < z ≤ −1", label: "buy-aggressive", alloc: 0.75 },
-  { range: "−1 < z ≤ 0", label: "buy-moderate", alloc: 0.6 },
-  { range: "0 < z ≤ +1", label: "normal-dca", alloc: 0.4 },
-  { range: "+1 < z ≤ +2", label: "buy-less", alloc: 0.2 },
-  { range: "z > +2", label: "hold-cash", alloc: 0 },
+const STAIRCASE_ROWS: Array<{ range: string; label: AllocationLabel }> = [
+  { range: "z ≤ −2", label: "strong-buy" },
+  { range: "−2 < z ≤ −1", label: "buy" },
+  { range: "−1 < z ≤ 0", label: "buy-moderate" },
+  { range: "0 < z ≤ +1", label: "sell-moderate" },
+  { range: "+1 < z ≤ +2", label: "sell" },
+  { range: "z > +2", label: "strong-sell" },
 ];
 
 function StaircaseLegend({ current }: { current: AllocationLabel }) {
@@ -407,11 +404,8 @@ function StaircaseLegend({ current }: { current: AllocationLabel }) {
           key={row.label}
           className={`flex items-center justify-between rounded-md border p-3 text-sm ${current === row.label ? "ring-2 ring-primary" : ""}`}
         >
-          <div className="space-y-0.5">
-            <div className="text-mono text-xs uppercase text-muted-foreground">{row.range}</div>
-            <div className="font-medium">{ALLOCATION_LABELS[row.label]}</div>
-          </div>
-          <Badge variant={allocationTone(row.label)}>{formatPercent(row.alloc, { sign: false, digits: 0 })}</Badge>
+          <div className="text-mono text-xs uppercase text-muted-foreground">{row.range}</div>
+          <Badge variant={allocationTone(row.label)}>{ALLOCATION_LABELS[row.label]}</Badge>
         </div>
       ))}
     </div>
