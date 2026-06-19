@@ -1,5 +1,6 @@
 import type { MarketDataProvider } from "@market-trends/shared";
 import { createStubProvider } from "@market-trends/shared";
+import { AlphaVantageProvider } from "./alphavantage.js";
 import { EtoroProvider } from "./etoro.js";
 import { YahooFinanceProvider } from "./yahoo.js";
 
@@ -13,6 +14,10 @@ export function createProvider(): MarketDataProvider {
       return new EtoroProvider({
         apiKey: process.env.ETORO_API_KEY ?? "",
         userKey: process.env.ETORO_USER_KEY ?? "",
+      });
+    case "alphavantage":
+      return new AlphaVantageProvider({
+        apiKey: process.env.ALPHAVANTAGE_API_KEY ?? "",
       });
     case "stub":
       return createStubProvider({
