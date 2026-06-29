@@ -21,6 +21,7 @@ import {
   type Quote,
 } from "@market-trends/shared";
 import { TTLCache } from "./cache.js";
+import { YahooRateLimitedError } from "./providers/yahoo.js";
 import type { Storage, StoredPriceSeries } from "./storage/types.js";
 
 export interface AnalyticsOptions {
@@ -67,12 +68,25 @@ export class AnalyticsService {
       return stored;
     }
 
-    const fresh = await this.provider.getHistoricalPrices({
-      ticker,
-      frequency,
-      startDate,
-      endDate,
-    });
+    let fresh: PriceSeries;
+    try {
+      fresh = await this.provider.getHistoricalPrices({
+        ticker,
+        frequency,
+        startDate,
+        endDate,
+      });
+    } catch (err) {
+      // When the provider is rate-limited, fall back to whatever we have in
+      // storage rather than failing the dashboard. The caller can check
+      // `dataWarning` on the snapshot to surface the staleness.
+      if (isRateLimitError(err) && stored) {
+        const series: PriceSeries = stored;
+        this.seriesCache.set(key, series);
+        return series;
+      }
+      throw err;
+    }
     await this.storage?.upsertPriceSeries(fresh);
     const merged = await this.storage?.getPriceSeries({
       provider: this.provider.name,
@@ -111,22 +125,55 @@ export class AnalyticsService {
     const defaultLookback: LookbackYears = options.lookback ?? 10;
     const defaultTrend =
       trends[String(defaultLookback)] ?? calculateLogTrend(series, defaultLookback, frequency);
-    const dataWarning = coverageWarning(series, defaultLookback);
+    const dataWarnings: string[] = [];
+    const coverageMsg = coverageWarning(series, defaultLookback);
+    if (coverageMsg) dataWarnings.push(coverageMsg);
 
     const allocation = resolveAllocation(defaultTrend.lastZScore, DEFAULT_STAIRCASE);
 
+    // Quote: prefer a live `getQuote` call, but fall back to the last bar
+    // when the stored series is fresh enough that we don't need a separate
+    // Yahoo round-trip. This saves one Yahoo call per snapshot, which is
+    // the single biggest source of 429s on dashboard reloads.
     let quote: Quote | undefined;
-    let name: string | undefined;
-    try {
-      quote = await this.getQuote(ticker);
-    } catch {
-      // Quote is optional on the snapshot — fall back to last bar price.
+    const lastBarPrice = lastFreshBarPrice(series);
+    if (lastBarPrice !== undefined) {
+      quote = {
+        ticker: ticker.toUpperCase(),
+        price: lastBarPrice.price,
+        currency: lastBarPrice.currency ?? "USD",
+        asOf: lastBarPrice.asOf,
+      };
     }
+    if (!quote) {
+      try {
+        quote = await this.getQuote(ticker);
+      } catch (err) {
+        if (isRateLimitError(err)) {
+          dataWarnings.push(
+            "Live quote unavailable due to upstream rate limiting; showing last known price.",
+          );
+        }
+        // Otherwise fall through: snapshot has no quote, that's fine.
+      }
+    }
+    if (quote && lastBarPrice && quotePriceAge(quote) > ONE_DAY_MS) {
+      dataWarnings.push(
+        `Live quote is ${describeAge(quote)} old; consider a manual refresh.`,
+      );
+    }
+
+    let name: string | undefined;
     if (this.provider instanceof Object && "getName" in this.provider) {
       try {
         name = await (this.provider as { getName: (t: string) => Promise<string | undefined> }).getName(ticker);
-      } catch {
-        // ignore
+      } catch (err) {
+        if (isRateLimitError(err)) {
+          dataWarnings.push(
+            "Display name unavailable due to upstream rate limiting.",
+          );
+        }
+        // Otherwise ignore; name is optional.
       }
     }
 
@@ -134,7 +181,7 @@ export class AnalyticsService {
       ticker: ticker.toUpperCase(),
       name,
       currency: quote?.currency,
-      dataWarning,
+      dataWarning: dataWarnings.length > 0 ? dataWarnings.join(" ") : undefined,
       quote,
       series,
       trends,
@@ -182,4 +229,56 @@ function isStoredSeriesUsable(
   if (endDate && endDate < today) return true;
   if (series.endDate >= today) return true;
   return series.fetchedAt.slice(0, 10) >= today;
+}
+
+/**
+ * Returns the latest bar's close price when the series is fresh enough
+ * that we can use it as a stand-in for the live quote. The threshold is
+ * generous (a few days) because we already pay for the bar in the series
+ * fetch, and a slightly stale quote is fine for the dashboard's purpose.
+ */
+const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
+const QUOTE_FALLBACK_MAX_AGE_MS = 3 * ONE_DAY_MS;
+
+function lastFreshBarPrice(series: PriceSeries): { price: number; asOf: string; currency?: string } | undefined {
+  const last = series.bars.at(-1);
+  if (!last || typeof last.adjustedClose !== "number" || !Number.isFinite(last.adjustedClose)) {
+    return undefined;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  // Treat anything within the freshness window as usable.
+  const ageMs = Date.parse(today) - Date.parse(last.date);
+  if (!Number.isFinite(ageMs) || ageMs > QUOTE_FALLBACK_MAX_AGE_MS) return undefined;
+  return {
+    price: last.adjustedClose,
+    asOf: new Date(last.date + "T00:00:00Z").toISOString(),
+  };
+}
+
+function quotePriceAge(quote: Quote): number {
+  const ts = Date.parse(quote.asOf);
+  if (!Number.isFinite(ts)) return Number.POSITIVE_INFINITY;
+  return Date.now() - ts;
+}
+
+function describeAge(quote: Quote): string {
+  const ageMs = quotePriceAge(quote);
+  if (!Number.isFinite(ageMs)) return "an unknown amount of time";
+  if (ageMs < 0) return "0 minutes";
+  const minutes = Math.round(ageMs / 60_000);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/**
+ * True if the error from the provider indicates upstream rate limiting
+ * (and therefore the caller should consider falling back to cached data
+ * rather than failing). Currently matches the Yahoo-specific error type;
+ * extend here when other providers add a similar concept.
+ */
+function isRateLimitError(err: unknown): boolean {
+  return err instanceof YahooRateLimitedError;
 }
