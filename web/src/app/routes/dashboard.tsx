@@ -241,6 +241,11 @@ function DashboardRow({
 
   const trend = snap.defaultTrend;
   const tone = deviationTone(trend.deviationPercent);
+  // Empty series means backfill hasn't landed yet. Render the price
+  // cells as "—" instead of "$0.00" so the user knows the row is
+  // pending, not priced at zero. The backfillStatus / dataWarning
+  // already explains why in the ticker column.
+  const hasBars = snap.series.bars.length > 0;
 
   return (
     <TableRow>
@@ -258,16 +263,20 @@ function DashboardRow({
         {snap.name ?? ticker.name ?? "—"}
       </TableCell>
       <TableCell className="text-right text-mono">
-        {formatCurrency(snap.quote?.price ?? trend.lastActualPrice, { currency: snap.currency })}
+        {hasBars
+          ? formatCurrency(snap.quote?.price ?? trend.lastActualPrice, { currency: snap.currency })
+          : "—"}
       </TableCell>
       <TableCell className="text-right text-mono">
-        {formatCurrency(trend.lastTrendPrice, { currency: snap.currency })}
+        {hasBars
+          ? formatCurrency(trend.lastTrendPrice, { currency: snap.currency })
+          : "—"}
       </TableCell>
       <TableCell className={`text-right text-mono text-${tone}`}>
-        {formatPercent(trend.deviationPercent, { sign: true })}
+        {hasBars ? formatPercent(trend.deviationPercent, { sign: true }) : "—"}
       </TableCell>
       <TableCell className={`text-right text-mono text-${tone}`}>
-        {formatZScore(trend.lastZScore)}
+        {hasBars ? formatZScore(trend.lastZScore) : "—"}
       </TableCell>
       <TableCell>
         <Badge variant={allocationTone(snap.allocation.label)}>

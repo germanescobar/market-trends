@@ -166,6 +166,10 @@ function AssetDetailContent({
 }) {
   const trend = snapshot.defaultTrend;
   const tone = deviationTone(trend.deviationPercent);
+  // Same as the dashboard: when backfill hasn't landed yet there are no
+  // bars and no real price/trend. Render the metric cards as "—" rather
+  // than "$0.00" so the asset-detail page doesn't lie about a price.
+  const hasBars = snapshot.series.bars.length > 0;
 
   return (
     <div className="space-y-6">
@@ -199,32 +203,44 @@ function AssetDetailContent({
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Current price"
-          value={formatCurrency(snapshot.quote?.price ?? trend.lastActualPrice, {
-            currency: snapshot.currency,
-          })}
+          value={
+            hasBars
+              ? formatCurrency(snapshot.quote?.price ?? trend.lastActualPrice, {
+                  currency: snapshot.currency,
+                })
+              : "—"
+          }
           tone={tone}
         />
         <MetricCard
           title="Trend price"
-          value={formatCurrency(trend.lastTrendPrice, { currency: snapshot.currency })}
+          value={
+            hasBars
+              ? formatCurrency(trend.lastTrendPrice, { currency: snapshot.currency })
+              : "—"
+          }
           subtitle={
-            <span className="inline-flex items-center gap-1">
-              CAGR {formatPercent(trend.annualizedCagr, { sign: false })}
-              <InfoTip text="The annualised compound growth rate implied by the regression slope. With log prices, CAGR = exp(slope × periods-per-year) − 1." />
-            </span>
+            hasBars ? (
+              <span className="inline-flex items-center gap-1">
+                CAGR {formatPercent(trend.annualizedCagr, { sign: false })}
+                <InfoTip text="The annualised compound growth rate implied by the regression slope. With log prices, CAGR = exp(slope × periods-per-year) − 1." />
+              </span>
+            ) : undefined
           }
           tone={tone}
         />
         <MetricCard
           title="Deviation"
-          value={formatPercent(trend.deviationPercent, { sign: true })}
-          subtitle={`σ ${trend.residualStdDev.toFixed(3)} (log space)`}
+          value={hasBars ? formatPercent(trend.deviationPercent, { sign: true }) : "—"}
+          subtitle={
+            hasBars ? `σ ${trend.residualStdDev.toFixed(3)} (log space)` : undefined
+          }
           tone={tone}
         />
         <MetricCard
           title="Z-score"
-          value={formatZScore(trend.lastZScore)}
-          subtitle={`Residual ${trend.lastResidual.toFixed(3)}`}
+          value={hasBars ? formatZScore(trend.lastZScore) : "—"}
+          subtitle={hasBars ? `Residual ${trend.lastResidual.toFixed(3)}` : undefined}
           tone={tone}
         />
       </section>
