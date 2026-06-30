@@ -4,10 +4,24 @@ import { AlphaVantageProvider } from "./alphavantage.js";
 import { EtoroProvider } from "./etoro.js";
 import { YahooFinanceProvider } from "./yahoo.js";
 
-/** Build a provider based on env. */
-export function createProvider(): MarketDataProvider {
-  const which = (process.env.MARKET_DATA_PROVIDER ?? "yahoo").toLowerCase();
-  switch (which) {
+export type ProviderKind = "yahoo" | "etoro" | "alphavantage" | "stub";
+
+interface CreateProviderOptions {
+  kind: ProviderKind;
+}
+
+/**
+ * Build a provider of a specific kind. The server uses this to instantiate
+ * three separate provider instances (one per cron service) so each can
+ * have its own auth state, caching, and rate-limit behavior.
+ *
+ * The historical-only `kind` parameter overrides the legacy
+ * `MARKET_DATA_PROVIDER` env var. When `kind` is omitted, the env var
+ * picks a default for backward compatibility with one-off scripts.
+ */
+export function createProvider(options?: CreateProviderOptions): MarketDataProvider {
+  const kind = options?.kind ?? (process.env.MARKET_DATA_PROVIDER ?? "yahoo").toLowerCase();
+  switch (kind) {
     case "yahoo":
       return new YahooFinanceProvider();
     case "etoro":
@@ -27,7 +41,7 @@ export function createProvider(): MarketDataProvider {
       });
     default:
       // eslint-disable-next-line no-console
-      console.warn(`[provider] unknown MARKET_DATA_PROVIDER=${which}, falling back to yahoo`);
+      console.warn(`[provider] unknown kind=${kind}, falling back to yahoo`);
       return new YahooFinanceProvider();
   }
 }

@@ -119,6 +119,10 @@ export interface TickerSnapshot {
   ticker: string;
   name?: string;
   currency?: string;
+  /** Pipeline status for this ticker. Drives the "pending" / "stale" badge
+   *  in the UI and lets the dashboard distinguish "no data yet" from
+   *  "data is fresh but small". */
+  backfillStatus?: BackfillStatus;
   /** Warning about provider coverage or data quality, if applicable. */
   dataWarning?: string;
   quote?: Quote;
@@ -161,6 +165,19 @@ export type AllocationLabel =
   | "sell"
   | "strong-sell";
 
+/** Status of the background data pipeline for a tracked ticker.
+ *
+ *  - `pending`   : newly added, no storage data yet; backfill has not yet
+ *                  produced a usable series. The dashboard shows "pending".
+ *  - `backfilling`: a backfill is in flight for this ticker.
+ *  - `ok`        : storage has at least one source of bars; refresh runs on
+ *                  a schedule to keep the right edge fresh.
+ *  - `failed`    : the most recent backfill attempt errored out. The next
+ *                  tick will retry. The dashboard shows a stale-data
+ *                  warning with the last error message.
+ */
+export type BackfillStatus = "pending" | "backfilling" | "ok" | "failed";
+
 /** Tracked ticker the user wants to monitor. */
 export interface TrackedTicker {
   ticker: string;
@@ -170,6 +187,26 @@ export interface TrackedTicker {
   lastUpdated?: string;
   /** Free-form note from the user. */
   note?: string;
+  /** Pipeline status for this ticker. Defaults to "pending". */
+  backfillStatus?: BackfillStatus;
+  /** Error message from the most recent failed backfill attempt. */
+  lastBackfillError?: string;
+  /** ISO-8601 timestamp when the last successful backfill or refresh ran. */
+  lastBackfillAt?: string;
+}
+
+/** Latest live quote for a ticker, kept in storage so the dashboard can
+ *  serve it without hitting a provider. */
+export interface LastQuote {
+  ticker: string;
+  price: number;
+  currency: string;
+  /** ISO-8601 timestamp from provider. */
+  asOf: string;
+  /** Source provider name. */
+  source: string;
+  /** ISO-8601 timestamp when we wrote this row. */
+  fetchedAt: string;
 }
 
 /** One rung of the staircase model. */

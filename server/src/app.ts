@@ -11,6 +11,15 @@ import type { Storage } from "./storage/types.js";
 interface Deps {
   storage: Storage;
   analytics: AnalyticsService;
+  backfill?: {
+    /** Trigger a backfill for one ticker immediately. Returns true if
+     *  the ticker's status flipped to "ok" after the call. */
+    backfillNow(symbol: string): Promise<boolean>;
+  };
+  refresh?: {
+    /** Refresh one ticker immediately using the recent-data provider. */
+    refreshNow(symbol: string): Promise<boolean>;
+  };
 }
 
 const LOOKBACKS: LookbackYears[] = [5, 10, 15, 20, "max"];
@@ -28,7 +37,7 @@ function parseFrequency(raw: string | undefined): PriceFrequency {
   return "monthly";
 }
 
-export function buildApp({ storage, analytics }: Deps) {
+export function buildApp({ storage, analytics, backfill, refresh }: Deps) {
   const app = new Hono();
 
   app.use("*", logger());
@@ -112,13 +121,14 @@ export function buildApp({ storage, analytics }: Deps) {
   // ---- Quote ----
   app.get("/api/tickers/:ticker/quote", async (c) => {
     const ticker = c.req.param("ticker").toUpperCase();
-    try {
-      const quote = await analytics.getQuote(ticker);
-      return c.json(quote);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown error";
-      return c.json({ error: message }, 502);
+    const quote = await storage.getLastQuote(ticker);
+    if (!quote) {
+      return c.json(
+        { error: "No quote available yet — backfill or refresh is in progress." },
+        404,
+      );
     }
+    return c.json(quote);
   });
 
   // ---- Comparison table for several tickers ----
@@ -147,6 +157,22 @@ export function buildApp({ storage, analytics }: Deps) {
       }),
     );
     return c.json({ rows });
+  });
+
+  // ---- Dev endpoints: trigger backfill / refresh on demand ----
+  // These are useful for local development when you don't want to wait
+  // for the cron schedule. In production they should be gated by an
+  // admin auth check; for now they're open because the project is dev.
+  app.post("/api/dev/backfill/:ticker", async (c) => {
+    if (!backfill) return c.json({ error: "backfill service not wired" }, 503);
+    const ok = await backfill.backfillNow(c.req.param("ticker"));
+    return c.json({ ok });
+  });
+
+  app.post("/api/dev/refresh/:ticker", async (c) => {
+    if (!refresh) return c.json({ error: "refresh service not wired" }, 503);
+    const ok = await refresh.refreshNow(c.req.param("ticker"));
+    return c.json({ ok });
   });
 
   return app;
