@@ -45,10 +45,16 @@ export class QuoteService {
 
   async tick(): Promise<void> {
     const tickers = await this.storage.listTickers();
-    // Skip pending tickers — their first quote will arrive when backfill
-    // lands. Refresh ok tickers so the dashboard always shows a recent
-    // price.
-    const ready = tickers.filter((t: TrackedTicker) => t.backfillStatus === "ok");
+    // Quote every ticker except those whose backfill is already in
+    // flight. We deliberately do this for `pending` and `failed`
+    // tickers too: the user added the ticker to *see* the price, and
+    // a 429 on the historical backfill shouldn't also mean no
+    // current price. The current price lives independently of the
+    // historical series, so we can populate it whenever eToro is up.
+    const ready = tickers.filter((t: TrackedTicker) => {
+      const status = t.backfillStatus ?? "pending";
+      return status !== "backfilling";
+    });
     for (const ticker of ready) {
       await this.refreshOne(ticker);
     }

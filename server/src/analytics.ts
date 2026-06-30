@@ -64,9 +64,11 @@ export class AnalyticsService {
       frequency: "daily",
     });
 
-    // No data at all → empty snapshot, dashboard shows "pending" (or
-    // "failed" if the backfill errored). We surface the real status so
-    // the UI can render the right badge.
+    // No bars yet → empty snapshot, but still pull the live quote from
+    // last_quotes so the dashboard can show a current price even while
+    // backfill is in flight or has failed. (The quote and the bars are
+    // independent data flows; eToro's quote service is much more
+    // reliable than the historical backfill path.)
     if (!stored || stored.bars.length === 0) {
       const tracked = await this.findTracked(upper);
       const status: TrackedTicker["backfillStatus"] =
@@ -75,7 +77,9 @@ export class AnalyticsService {
         status === "failed" && tracked?.lastBackfillError
           ? `Backfill failed: ${tracked.lastBackfillError}. Will retry on next cycle.`
           : "Awaiting first backfill.";
-      return emptySnapshot(upper, tracked, status, message);
+      return emptySnapshot(upper, tracked, status, message, {
+        getLastQuote: () => this.storage.getLastQuote(upper),
+      });
     }
 
     const series = storedBarsToSeries(stored);
@@ -160,12 +164,13 @@ export class AnalyticsService {
   }
 }
 
-function emptySnapshot(
+async function emptySnapshot(
   ticker: string,
   tracked: TrackedTicker | null,
   status: TrackedTicker["backfillStatus"],
   message: string,
-): TickerSnapshot {
+  deps: { getLastQuote: () => Promise<import("@market-trends/shared").LastQuote | null> },
+): Promise<TickerSnapshot> {
   // The shared calculateLogTrend / calculateLogTrendSeries functions
   // require at least 2 points; an empty series would throw. We hand back
   // a placeholder snapshot with zero values and the dataWarning that the
@@ -197,11 +202,26 @@ function emptySnapshot(
     lastResidual: 0,
     lastZScore: 0,
   };
+  // The quote is intentionally fetched synchronously here (we're already
+  // on the slow path because there's no data). This lets the dashboard
+  // show a real current price on a pending row, even though the bars
+  // haven't landed yet.
+  const liveQuote = await deps.getLastQuote();
+  const quote = liveQuote
+    ? {
+        ticker: liveQuote.ticker,
+        price: liveQuote.price,
+        currency: liveQuote.currency,
+        asOf: liveQuote.asOf,
+      }
+    : undefined;
   return {
     ticker,
     name: tracked?.name,
+    currency: quote?.currency,
     backfillStatus: status,
     dataWarning: message,
+    quote,
     series: emptySeries,
     trends: { "10": placeholderRegression },
     defaultTrend: placeholderRegression,
