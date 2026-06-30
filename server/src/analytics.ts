@@ -205,7 +205,7 @@ function emptySnapshot(
     series: emptySeries,
     trends: { "10": placeholderRegression },
     defaultTrend: placeholderRegression,
-    allocation: { zScore: 0, label: "buy-moderate", description: "Insufficient data." },
+    allocation: { zScore: 0, label: "pending", description: "No data yet." },
     asOf: new Date().toISOString(),
   };
 }

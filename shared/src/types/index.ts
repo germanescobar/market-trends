@@ -163,7 +163,11 @@ export type AllocationLabel =
   | "buy-moderate"
   | "sell-moderate"
   | "sell"
-  | "strong-sell";
+  | "strong-sell"
+  /** No signal available: the ticker has no bars yet (backfill pending
+   *  or failed). The dashboard renders this as "—" with no colored
+   *  badge so users don't mistake a placeholder for a real recommendation. */
+  | "pending";
 
 /** Status of the background data pipeline for a tracked ticker.
  *

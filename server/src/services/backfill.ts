@@ -28,6 +28,12 @@ import type { Storage } from "../storage/types.js";
 
 const BACKFILL_CRON = "7 * * * *"; // top of every hour, :07
 const FREQUENCIES: PriceFrequency[] = ["daily"]; // weekly/monthly are computed downstream
+// How many tickers to attempt per cron tick. With one ticker per tick,
+// a fresh 8-ticker batch needs 8 hours to drain even if Yahoo cooperates.
+// Two per tick halves the worst case to 4 hours while still keeping us
+// well under Yahoo's ≈100 req/hr ceiling. Failed tickers stay in the
+// queue and retry on the next tick.
+const TICKERS_PER_CRON = 2;
 
 export class BackfillService {
   private task: ScheduledTask | null = null;
@@ -46,12 +52,45 @@ export class BackfillService {
       });
     });
     // eslint-disable-next-line no-console
-    console.log(`[backfill] scheduled '${BACKFILL_CRON}' using provider '${this.historicalProvider.name}'`);
-    // Run once on startup so a fresh server catches up immediately.
-    void this.tick().catch((err) => {
+    console.log(`[backfill] scheduled '${BACKFILL_CRON}' (${TICKERS_PER_CRON} ticker(s)/tick) using provider '${this.historicalProvider.name}'`);
+    // On startup, drain the queue as fast as the provider allows. The
+    // cron tick is conservative (TICKERS_PER_CRON per hour) so we don't
+    // burn Yahoo's budget during steady state, but a fresh server with
+    // 8 newly added tickers shouldn't have to wait 4 hours to start
+    // seeing data. We bail out on the first failure (typically a 429)
+    // and let the cron retry on the next tick.
+    void this.drainUntilFirstFailure().catch((err) => {
       // eslint-disable-next-line no-console
-      console.error("[backfill] initial tick failed", err);
+      console.error("[backfill] startup drain failed", err);
     });
+  }
+
+  /** Process the queue continuously until the first failure. Used on
+   *  startup so a server restart catches up immediately; falls back to
+   *  the conservative cron cadence after the first 429. */
+  private async drainUntilFirstFailure(): Promise<void> {
+    while (true) {
+      const tickers = await this.storage.listTickers();
+      const candidates = tickers.filter((t: TrackedTicker) => {
+        const status: BackfillStatus = t.backfillStatus ?? "pending";
+        return status === "pending" || status === "failed";
+      });
+      if (candidates.length === 0) return;
+
+      const ticker = candidates[0]!;
+      const before = ticker.backfillStatus;
+      await this.backfillTicker(ticker);
+      const after = (await this.storage.listTickers()).find(
+        (t) => t.ticker === ticker.ticker,
+      );
+      // If the ticker is still failed (or didn't move to ok), assume
+      // the provider is rate-limiting us and stop draining. The cron
+      // will retry on the next tick.
+      if (!after || after.backfillStatus === "failed") return;
+      // Same status (shouldn't happen with our transitions, but safety
+      // belt): break to avoid an infinite loop.
+      if (after.backfillStatus === before) return;
+    }
   }
 
   stop(): void {
@@ -59,8 +98,9 @@ export class BackfillService {
     this.task = null;
   }
 
-  /** One backfill pass. Processes pending/failed tickers one at a time so
-   *  we never burst > 1 historical request at Yahoo. */
+  /** One backfill pass. Processes up to TICKERS_PER_CRON pending/failed
+   *  tickers, sequentially. Series processing (one at a time) keeps us
+   *  polite to Yahoo even if it isn't currently throttling us. */
   async tick(): Promise<void> {
     const tickers = await this.storage.listTickers();
     const candidates = tickers.filter((t: TrackedTicker) => {
@@ -69,10 +109,10 @@ export class BackfillService {
     });
     if (candidates.length === 0) return;
 
-    // Process one ticker per tick to stay polite. Future improvement:
-    // batch within a tick with a small concurrency cap (e.g., 2).
-    const ticker = candidates[0]!;
-    await this.backfillTicker(ticker);
+    const batch = candidates.slice(0, TICKERS_PER_CRON);
+    for (const ticker of batch) {
+      await this.backfillTicker(ticker);
+    }
   }
 
   /** Run one ticker immediately (used by tests and the dev endpoint).

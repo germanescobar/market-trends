@@ -11,6 +11,7 @@ export const ALLOCATION_LABELS: Record<AllocationLabel, string> = {
   "sell-moderate": "Sell moderate",
   sell: "Sell",
   "strong-sell": "Strong sell",
+  pending: "Pending",
 };
 
 export function allocationTone(
@@ -25,5 +26,7 @@ export function allocationTone(
     case "sell":
     case "sell-moderate":
       return "bear";
+    case "pending":
+      return "neutral";
   }
 }
