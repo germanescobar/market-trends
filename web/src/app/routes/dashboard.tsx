@@ -241,11 +241,13 @@ function DashboardRow({
 
   const trend = snap.defaultTrend;
   const tone = deviationTone(trend.deviationPercent);
-  // Empty series means backfill hasn't landed yet. Render the price
-  // cells as "—" instead of "$0.00" so the user knows the row is
-  // pending, not priced at zero. The backfillStatus / dataWarning
-  // already explains why in the ticker column.
+  // Empty series means backfill hasn't landed yet. The price cell can
+  // still show a real value when a live quote exists (the eToro quote
+  // service runs independently of backfill), so the cell uses `hasQuote`
+  // instead of `hasBars`. Trend / deviation / z-score still require bars
+  // because they're computed from the regression.
   const hasBars = snap.series.bars.length > 0;
+  const hasQuote = snap.quote !== undefined && snap.quote !== null;
 
   return (
     <TableRow>
@@ -263,9 +265,11 @@ function DashboardRow({
         {snap.name ?? ticker.name ?? "—"}
       </TableCell>
       <TableCell className="text-right text-mono">
-        {hasBars
-          ? formatCurrency(snap.quote?.price ?? trend.lastActualPrice, { currency: snap.currency })
-          : "—"}
+        {hasQuote
+          ? formatCurrency(snap.quote!.price, { currency: snap.currency })
+          : hasBars
+            ? formatCurrency(trend.lastActualPrice, { currency: snap.currency })
+            : "—"}
       </TableCell>
       <TableCell className="text-right text-mono">
         {hasBars

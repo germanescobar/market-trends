@@ -170,6 +170,7 @@ function AssetDetailContent({
   // bars and no real price/trend. Render the metric cards as "—" rather
   // than "$0.00" so the asset-detail page doesn't lie about a price.
   const hasBars = snapshot.series.bars.length > 0;
+  const hasQuote = snapshot.quote !== undefined && snapshot.quote !== null;
 
   return (
     <div className="space-y-6">
@@ -204,11 +205,15 @@ function AssetDetailContent({
         <MetricCard
           title="Current price"
           value={
-            hasBars
-              ? formatCurrency(snapshot.quote?.price ?? trend.lastActualPrice, {
+            hasQuote
+              ? formatCurrency(snapshot.quote!.price, {
                   currency: snapshot.currency,
                 })
-              : "—"
+              : hasBars
+                ? formatCurrency(snapshot.quote?.price ?? trend.lastActualPrice, {
+                    currency: snapshot.currency,
+                  })
+                : "—"
           }
           tone={tone}
         />
