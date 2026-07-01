@@ -11,6 +11,7 @@
 import { schedule as cronSchedule, type ScheduledTask } from "node-cron";
 import type { LastQuote, MarketDataProvider, TrackedTicker } from "@market-trends/shared";
 import type { Storage } from "../storage/types.js";
+import { log } from "./logger.js";
 
 const QUOTE_CRON = "*/5 * * * *"; // every 5 minutes
 
@@ -31,7 +32,7 @@ export class QuoteService {
       });
     });
     // eslint-disable-next-line no-console
-    console.log(`[quote] scheduled '${QUOTE_CRON}' using provider '${this.provider.name}'`);
+    console.error(`[quote] scheduled '${QUOTE_CRON}' using provider '${this.provider.name}'`);
     void this.tick().catch((err) => {
       // eslint-disable-next-line no-console
       console.error("[quote] initial tick failed", err);
@@ -75,7 +76,7 @@ export class QuoteService {
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown message";
       // eslint-disable-next-line no-console
-      console.warn(`[quote] ${ticker.ticker} FAILED: ${message}`);
+      log(`[quote] ${ticker.ticker} FAILED: ${message}`);
     }
   }
 }

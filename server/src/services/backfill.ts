@@ -25,6 +25,7 @@ import type {
   TrackedTicker,
 } from "@market-trends/shared";
 import type { Storage } from "../storage/types.js";
+import { log } from "./logger.js";
 
 const BACKFILL_CRON = "7 * * * *"; // top of every hour, :07
 const FREQUENCIES: PriceFrequency[] = ["daily"]; // weekly/monthly are computed downstream
@@ -52,7 +53,9 @@ export class BackfillService {
       });
     });
     // eslint-disable-next-line no-console
-    console.log(`[backfill] scheduled '${BACKFILL_CRON}' (${TICKERS_PER_CRON} ticker(s)/tick) using provider '${this.historicalProvider.name}'`);
+    log(
+      `[backfill] scheduled '${BACKFILL_CRON}' (${TICKERS_PER_CRON} ticker(s)/tick) using provider '${this.historicalProvider.name}'`,
+    );
     // On startup, drain the queue as fast as the provider allows. The
     // cron tick is conservative (TICKERS_PER_CRON per hour) so we don't
     // burn Yahoo's budget during steady state, but a fresh server with
@@ -159,7 +162,7 @@ export class BackfillService {
         lastBackfillError: undefined,
       });
       // eslint-disable-next-line no-console
-      console.log(
+      log(
         `[backfill] ${ticker.ticker} OK (${totalBars} bars across ${FREQUENCIES.length} frequencies)`,
       );
     } catch (err) {
@@ -169,7 +172,7 @@ export class BackfillService {
         lastBackfillError: message,
       });
       // eslint-disable-next-line no-console
-      console.warn(`[backfill] ${ticker.ticker} FAILED: ${message}`);
+      log(`[backfill] ${ticker.ticker} FAILED: ${message}`);
     }
   }
 }

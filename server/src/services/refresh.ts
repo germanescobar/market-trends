@@ -20,6 +20,7 @@ import type {
   TrackedTicker,
 } from "@market-trends/shared";
 import type { Storage } from "../storage/types.js";
+import { log } from "./logger.js";
 
 const REFRESH_CRON = "*/15 * * * *"; // every 15 minutes
 const REFRESH_SKIP_HOURS = 12;
@@ -47,7 +48,7 @@ export class RefreshService {
       });
     });
     // eslint-disable-next-line no-console
-    console.log(`[refresh] scheduled '${REFRESH_CRON}' (primary=${this.primary.name}, fallback=${this.fallback?.name ?? "none"})`);
+    console.error(`[refresh] scheduled '${REFRESH_CRON}' (primary=${this.primary.name}, fallback=${this.fallback?.name ?? "none"})`);
     void this.tick().catch((err) => {
       // eslint-disable-next-line no-console
       console.error("[refresh] initial tick failed", err);
@@ -117,12 +118,12 @@ export class RefreshService {
         }
       }
       // eslint-disable-next-line no-console
-      console.log(`[refresh] ${ticker.ticker} OK via ${provider.name} (${series?.bars.length ?? 0} bars)`);
+      log(`[refresh] ${ticker.ticker} OK via ${provider.name} (${series?.bars.length ?? 0} bars)`);
     } catch (err) {
       if (this.fallback && this.fallback.name !== provider.name) {
         const message = err instanceof Error ? err.message : "unknown error";
         // eslint-disable-next-line no-console
-        console.warn(`[refresh] ${ticker.ticker} primary failed (${message}); trying ${this.fallback.name}`);
+        log(`[refresh] ${ticker.ticker} primary failed (${message}); trying ${this.fallback.name}`);
         try {
           for (const frequency of FREQUENCIES) {
             const fallbackSeries = await this.fallback.getHistoricalPrices({
@@ -140,16 +141,16 @@ export class RefreshService {
             }
           }
           // eslint-disable-next-line no-console
-          console.log(`[refresh] ${ticker.ticker} OK via fallback ${this.fallback.name}`);
+          log(`[refresh] ${ticker.ticker} OK via fallback ${this.fallback.name}`);
         } catch (fallbackErr) {
           const fbMessage = fallbackErr instanceof Error ? fallbackErr.message : "unknown error";
           // eslint-disable-next-line no-console
-          console.warn(`[refresh] ${ticker.ticker} FAILED: primary: ${message}; fallback: ${fbMessage}`);
+          log(`[refresh] ${ticker.ticker} FAILED: primary: ${message}; fallback: ${fbMessage}`);
         }
       } else {
         const message = err instanceof Error ? err.message : "unknown error";
         // eslint-disable-next-line no-console
-        console.warn(`[refresh] ${ticker.ticker} FAILED: ${message}`);
+        log(`[refresh] ${ticker.ticker} FAILED: ${message}`);
       }
     }
   }
