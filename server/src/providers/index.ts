@@ -1,13 +1,16 @@
 import type { MarketDataProvider } from "@market-trends/shared";
 import { createStubProvider } from "@market-trends/shared";
 import { AlphaVantageProvider } from "./alphavantage.js";
+import { CsvProvider } from "./csv.js";
 import { EtoroProvider } from "./etoro.js";
 import { YahooFinanceProvider } from "./yahoo.js";
 
-export type ProviderKind = "yahoo" | "etoro" | "alphavantage" | "stub";
+export type ProviderKind = "yahoo" | "etoro" | "alphavantage" | "csv" | "stub";
 
 interface CreateProviderOptions {
   kind: ProviderKind;
+  /** Path overrides for the CSV provider (e.g. {"csv": "data/"}). */
+  dataDir?: string;
 }
 
 /**
@@ -33,6 +36,8 @@ export function createProvider(options?: CreateProviderOptions): MarketDataProvi
       return new AlphaVantageProvider({
         apiKey: process.env.ALPHAVANTAGE_API_KEY ?? "",
       });
+    case "csv":
+      return new CsvProvider({ dataDir: options?.dataDir });
     case "stub":
       return createStubProvider({
         drift: 0.08,

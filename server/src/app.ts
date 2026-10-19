@@ -64,7 +64,7 @@ export function buildApp({ storage, analytics, backfill, refresh }: Deps) {
       return c.json({ error: "ticker is required" }, 400);
     }
     const ticker = body.ticker.toUpperCase().trim();
-    if (!/^[A-Z0-9.\-:]{1,16}$/.test(ticker)) {
+    if (!/^[A-Z0-9.\-:=]{1,16}$/.test(ticker)) {
       return c.json({ error: "invalid ticker symbol" }, 400);
     }
     const created = await storage.addTicker({
