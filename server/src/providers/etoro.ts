@@ -22,6 +22,15 @@
  *
  * Historical candles are raw close prices; eToro does not document them as
  * split/dividend-adjusted, so `adjustedClose` mirrors `close`.
+ *
+ * Symbol identity:
+ * The app stores tickers in Yahoo-style form (e.g. `BTC-USD`, `COP=X`),
+ * but eToro's instruments endpoint keys on the provider's own internal
+ * symbols (e.g. `BTC`, `USDCOP`). eToro's search requires exact match, so
+ * we translate at the boundary via `mapEtoroLookupSymbol` and preserve
+ * the user-facing ticker for storage/quote identity. See
+ * https://api-portal.etoro.com/core/guides/get-instrument-id and
+ * https://api-portal.etoro.com/core/guides/market-orders.
  */
 
 import {
@@ -37,6 +46,47 @@ import { randomUUID } from "node:crypto";
 const BASE_URL = "https://public-api.etoro.com/api/v1";
 const DEFAULT_DAILY_CANDLES = 1000;
 const DEFAULT_WEEKLY_CANDLES = 1000;
+
+/**
+ * Explicit provider-specific ticker mappings.
+ *
+ * Add new entries here whenever a stored ticker does not match eToro's
+ * internal symbol exactly. Values are matched case-insensitively against
+ * `normalizeTicker(input)`.
+ */
+const TICKER_MAPPINGS: Record<string, { lookupSymbol: string }> = {
+  // Crypto: Yahoo uses `BTC-USD`, eToro keys on plain `BTC`.
+  "BTC-USD": { lookupSymbol: "BTC" },
+  // FX: Yahoo uses `COP=X` (USD/COP), eToro keys on `USDCOP`.
+  "COP=X": { lookupSymbol: "USDCOP" },
+};
+
+/**
+ * Translate a stored/user-facing ticker to the symbol eToro's search
+ * endpoint expects.
+ *
+ * Returns:
+ *   - `lookupSymbol`: exact symbol eToro keys on for `internalSymbolFull`
+ *     and downstream market-data calls.
+ *   - `normalized`: the case-normalized original ticker, used as the cache
+ *     key so we don't round-trip the network on repeat calls.
+ *
+ * Currency semantics for the live quote are handled separately by
+ * `priceContext` once the rate arrives — see the file header.
+ *
+ * Exported for unit testing without spinning up the provider.
+ */
+export function mapEtoroLookupSymbol(ticker: string): {
+  lookupSymbol: string;
+  normalized: string;
+} {
+  const normalized = normalizeTicker(ticker);
+  const mapped = TICKER_MAPPINGS[normalized];
+  if (mapped) {
+    return { ...mapped, normalized };
+  }
+  return { lookupSymbol: normalized, normalized };
+}
 
 interface EtoroProviderOptions {
   apiKey: string;
@@ -214,15 +264,18 @@ export class EtoroProvider implements MarketDataProvider {
   }
 
   private async resolveInstrument(ticker: string): Promise<ResolvedInstrument> {
-    const normalized = normalizeTicker(ticker);
-    const cached = this.instrumentCache.get(normalized);
+    const mapping = mapEtoroLookupSymbol(ticker);
+    const cached = this.instrumentCache.get(mapping.normalized);
     if (cached) return cached;
 
     // `internalSymbolFull` is the documented lookup parameter; `text` is
     // ignored by the server (it returns a paginated catalog regardless of
     // the value). The `fields` param asks for the metadata we care about.
+    // `lookupSymbol` is the eToro-native form (e.g. `BTC`, `USDCOP`) for
+    // tickers that don't match eToro's internal symbol directly (e.g. the
+    // Yahoo-style `BTC-USD`, `COP=X` we persist).
     const qs = new URLSearchParams({
-      internalSymbolFull: normalized,
+      internalSymbolFull: mapping.lookupSymbol,
       fields: "instrumentId,internalSymbolFull,displayname,instrumentTypeId",
     });
     const search = await this.request<SearchResponse>(
@@ -231,15 +284,15 @@ export class EtoroProvider implements MarketDataProvider {
     const items = search.items ?? [];
     const first = items.find((item) => typeof item.instrumentId === "number");
     if (!first || typeof first.instrumentId !== "number") {
-      throw new Error(`Could not resolve ${normalized} via eToro search`);
+      throw new Error(`Could not resolve ${mapping.lookupSymbol} via eToro search`);
     }
 
     const resolved: ResolvedInstrument = {
       id: first.instrumentId,
-      ticker: normalized,
+      ticker: mapping.normalized,
       name: first.displayname,
     };
-    this.instrumentCache.set(normalized, resolved);
+    this.instrumentCache.set(mapping.normalized, resolved);
     return resolved;
   }
 
