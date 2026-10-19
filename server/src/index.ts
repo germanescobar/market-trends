@@ -55,7 +55,17 @@ const backfill = new BackfillService(storage, yahoo);
 const refresh = new RefreshService(storage, etoro, alphaVantage);
 const quotes = new QuoteService(storage, etoro);
 
-backfill.start();
+// Disable the backfill cron when BACKFILL_ENABLED=false. Use this while
+// Yahoo is rate-limiting us (HTTP 429) — the cron (and the startup
+// drain) would otherwise re-burn a request on every boot and re-extend
+// the block. Toggling this in `.env` is cheaper than commenting out
+// the line and remembering to revert. Defaults to enabled when unset.
+if (process.env.BACKFILL_ENABLED === "false") {
+  // eslint-disable-next-line no-console
+  console.log("[backfill] disabled by BACKFILL_ENABLED=false (cron + startup drain skipped)");
+} else {
+  backfill.start();
+}
 refresh.start();
 quotes.start();
 

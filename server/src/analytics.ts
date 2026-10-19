@@ -73,10 +73,23 @@ export class AnalyticsService {
       const tracked = await this.findTracked(upper);
       const status: TrackedTicker["backfillStatus"] =
         tracked?.backfillStatus ?? "pending";
-      const message =
-        status === "failed" && tracked?.lastBackfillError
-          ? `Backfill failed: ${tracked.lastBackfillError}. Will retry on next cycle.`
-          : "Awaiting first backfill.";
+      // When the provider rate-limited us and set a cooldown, surface
+      // the next-attempt time so the user knows when to expect a retry
+      // rather than seeing a vague "next cycle" message.
+      let message: string;
+      if (status === "failed" && tracked?.lastBackfillError) {
+        if (tracked.nextBackfillAt) {
+          const retryAt = new Date(tracked.nextBackfillAt);
+          const isFinite = !Number.isNaN(retryAt.getTime());
+          message = isFinite
+            ? `Backfill failed: ${tracked.lastBackfillError}. Next attempt at ${retryAt.toISOString()}.`
+            : `Backfill failed: ${tracked.lastBackfillError}.`;
+        } else {
+          message = `Backfill failed: ${tracked.lastBackfillError}. Will retry on next cycle.`;
+        }
+      } else {
+        message = "Awaiting first backfill.";
+      }
       return emptySnapshot(upper, tracked, status, message, {
         getLastQuote: () => this.storage.getLastQuote(upper),
       });

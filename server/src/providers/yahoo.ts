@@ -16,6 +16,7 @@ import {
   type PriceBar,
   type PriceSeries,
   type Quote,
+  RateLimitError,
 } from "@market-trends/shared";
 
 const CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
@@ -93,6 +94,12 @@ export class YahooFinanceProvider implements MarketDataProvider {
         Accept: "application/json",
       },
     });
+    if (res.status === 429) {
+      throw new RateLimitError(
+        `Yahoo chart request failed (429) for ${upper}`,
+        { provider: this.name, ticker: upper },
+      );
+    }
     if (!res.ok) {
       throw new Error(`Yahoo chart request failed (${res.status}) for ${upper}`);
     }
@@ -151,6 +158,12 @@ export class YahooFinanceProvider implements MarketDataProvider {
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
     });
+    if (res.status === 429) {
+      throw new RateLimitError(
+        `Yahoo quote request failed (429) for ${upper}`,
+        { provider: this.name, ticker: upper },
+      );
+    }
     if (!res.ok) {
       throw new Error(`Yahoo quote request failed (${res.status}) for ${upper}`);
     }

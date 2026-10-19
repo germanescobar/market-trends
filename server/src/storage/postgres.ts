@@ -39,8 +39,12 @@ export class PostgresStore implements Storage {
         last_updated TIMESTAMPTZ,
         backfill_status TEXT NOT NULL DEFAULT 'pending',
         last_backfill_error TEXT,
-        last_backfill_at TIMESTAMPTZ
+        last_backfill_at TIMESTAMPTZ,
+        next_backfill_at TIMESTAMPTZ
       );
+    `);
+    await this.pool.query(`
+      ALTER TABLE tracked_tickers ADD COLUMN IF NOT EXISTS next_backfill_at TIMESTAMPTZ;
     `);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS market_price_bars (
@@ -85,9 +89,10 @@ export class PostgresStore implements Storage {
       backfill_status: string | null;
       last_backfill_error: string | null;
       last_backfill_at: Date | null;
+      next_backfill_at: Date | null;
     }>(
       `SELECT ticker, name, note, last_updated, backfill_status,
-              last_backfill_error, last_backfill_at
+              last_backfill_error, last_backfill_at, next_backfill_at
          FROM tracked_tickers
          ORDER BY ticker ASC`,
     );
@@ -98,8 +103,8 @@ export class PostgresStore implements Storage {
     await this.ready;
     await this.pool.query(
       `INSERT INTO tracked_tickers
-         (ticker, name, note, last_updated, backfill_status, last_backfill_error, last_backfill_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (ticker, name, note, last_updated, backfill_status, last_backfill_error, last_backfill_at, next_backfill_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (ticker) DO UPDATE
          SET name = EXCLUDED.name,
              note = EXCLUDED.note,
@@ -112,6 +117,7 @@ export class PostgresStore implements Storage {
         ticker.backfillStatus ?? "pending",
         ticker.lastBackfillError ?? null,
         ticker.lastBackfillAt ? new Date(ticker.lastBackfillAt) : null,
+        ticker.nextBackfillAt ? new Date(ticker.nextBackfillAt) : null,
       ],
     );
     return ticker;
@@ -138,31 +144,44 @@ export class PostgresStore implements Storage {
       backfill_status: string | null;
       last_backfill_error: string | null;
       last_backfill_at: Date | null;
+      next_backfill_at: Date | null;
     }>(
       `SELECT ticker, name, note, last_updated, backfill_status,
-              last_backfill_error, last_backfill_at
+              last_backfill_error, last_backfill_at, next_backfill_at
          FROM tracked_tickers WHERE ticker = $1`,
       [upper],
     );
     if (existing.rowCount === 0) return null;
     const row = existing.rows[0]!;
+    // Patch semantics: a field present in `patch` (even as `undefined`)
+    // overrides the stored value; a field absent from `patch` keeps the
+    // existing value. This mirrors InMemoryStore's `{ ...existing, ...patch }`
+    // and lets callers like BackfillService clear a cooldown or stale
+    // error message by passing `nextBackfillAt: undefined` /
+    // `lastBackfillError: undefined`. Plain `??` would lose that
+    // distinction and silently preserve the old value.
     const next: TrackedTicker = {
       ticker: row.ticker,
-      name: patch.name ?? row.name ?? undefined,
-      note: patch.note ?? row.note ?? undefined,
-      lastUpdated: (patch.lastUpdated
-        ? new Date(patch.lastUpdated)
-        : row.last_updated
-      )?.toISOString(),
-      backfillStatus: (patch.backfillStatus ?? row.backfill_status ?? "pending") as TrackedTicker["backfillStatus"],
+      name: "name" in patch ? patch.name ?? undefined : row.name ?? undefined,
+      note: "note" in patch ? patch.note ?? undefined : row.note ?? undefined,
+      lastUpdated: patch.lastUpdated
+        ? new Date(patch.lastUpdated).toISOString()
+        : row.last_updated?.toISOString(),
+      backfillStatus:
+        patch.backfillStatus ?? (row.backfill_status as TrackedTicker["backfillStatus"]) ?? "pending",
       lastBackfillError:
-        patch.lastBackfillError !== undefined
+        "lastBackfillError" in patch
           ? patch.lastBackfillError
           : row.last_backfill_error ?? undefined,
-      lastBackfillAt: (patch.lastBackfillAt
-        ? new Date(patch.lastBackfillAt)
-        : row.last_backfill_at
-      )?.toISOString(),
+      lastBackfillAt: patch.lastBackfillAt
+        ? new Date(patch.lastBackfillAt).toISOString()
+        : row.last_backfill_at?.toISOString(),
+      nextBackfillAt:
+        "nextBackfillAt" in patch
+          ? patch.nextBackfillAt
+            ? new Date(patch.nextBackfillAt).toISOString()
+            : undefined
+          : row.next_backfill_at?.toISOString() ?? undefined,
     };
     await this.pool.query(
       `UPDATE tracked_tickers
@@ -171,7 +190,8 @@ export class PostgresStore implements Storage {
               last_updated = $4,
               backfill_status = $5,
               last_backfill_error = $6,
-              last_backfill_at = $7
+              last_backfill_at = $7,
+              next_backfill_at = $8
         WHERE ticker = $1`,
       [
         upper,
@@ -181,6 +201,7 @@ export class PostgresStore implements Storage {
         next.backfillStatus ?? "pending",
         next.lastBackfillError ?? null,
         next.lastBackfillAt ? new Date(next.lastBackfillAt) : null,
+        next.nextBackfillAt ? new Date(next.nextBackfillAt) : null,
       ],
     );
     return next;
@@ -426,6 +447,7 @@ function rowToTrackedTicker(row: {
   backfill_status: string | null;
   last_backfill_error: string | null;
   last_backfill_at: Date | null;
+  next_backfill_at: Date | null;
 }): TrackedTicker {
   return {
     ticker: row.ticker,
@@ -435,6 +457,7 @@ function rowToTrackedTicker(row: {
     backfillStatus: (row.backfill_status ?? "pending") as TrackedTicker["backfillStatus"],
     lastBackfillError: row.last_backfill_error ?? undefined,
     lastBackfillAt: row.last_backfill_at ? row.last_backfill_at.toISOString() : undefined,
+    nextBackfillAt: row.next_backfill_at ? row.next_backfill_at.toISOString() : undefined,
   };
 }
 

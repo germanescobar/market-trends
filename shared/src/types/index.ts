@@ -197,6 +197,12 @@ export interface TrackedTicker {
   lastBackfillError?: string;
   /** ISO-8601 timestamp when the last successful backfill or refresh ran. */
   lastBackfillAt?: string;
+  /** Earliest ISO-8601 timestamp at which a retry is allowed. Set when
+   *  the provider rate-limits us (HTTP 429) so the next tick skips this
+   *  ticker until the cooldown expires — prevents endless hour-after-hour
+   *  hammering of a throttled provider. Null/undefined means "ready to
+   *  try immediately". */
+  nextBackfillAt?: string;
 }
 
 /** Latest live quote for a ticker, kept in storage so the dashboard can

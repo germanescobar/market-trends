@@ -10,14 +10,24 @@
  * backfill. CoinGecko's free tier is also 365-day-limited, so we
  * don't add it.
  *
- * Failure handling: a 429 or 5xx response parks the ticker in
- * `backfillStatus = failed` with the error message; the next tick
- * retries. We deliberately do NOT retry with backoff inside a single
- * tick — if Yahoo is rate-limiting us, hammering it won't help and
- * would just extend the block.
+ * Failure handling:
+ *  - HTTP 429 (RateLimitError) → write a cooldown (`nextBackfillAt`) of
+ *    RATE_LIMIT_COOLDOWN_HOURS into the future, then bail. The tick
+ *    (and any future startup drain) will skip this ticker until the
+ *    cooldown expires. This is the key fix for the "429 every hour,
+ *    forever" problem: without it, the cron plus the startup drain
+ *    together hammer the provider indefinitely.
+ *  - Other failures (5xx, network) → write a short cooldown so we don't
+ *    busy-loop, but the next cron tick (1h away) will retry naturally.
+ *  - On success, clear any cooldown so a future restart can re-check.
+ *
+ * We deliberately do NOT retry with backoff inside a single tick — if
+ * Yahoo is rate-limiting us, hammering it won't help and would just
+ * extend the block.
  */
 
 import { schedule as cronSchedule, type ScheduledTask } from "node-cron";
+import { RateLimitError } from "@market-trends/shared";
 import type {
   BackfillStatus,
   MarketDataProvider,
@@ -35,6 +45,18 @@ const FREQUENCIES: PriceFrequency[] = ["daily"]; // weekly/monthly are computed 
 // well under Yahoo's ≈100 req/hr ceiling. Failed tickers stay in the
 // queue and retry on the next tick.
 const TICKERS_PER_CRON = 2;
+
+// How long to park a ticker after the provider signals rate limiting.
+// 6h is conservative — Yahoo's public API usually unblocks within 1-2h
+// once you stop hammering, but a 6h floor means we never burn more than
+// 4 requests per ticker per day even if the block lasts the full window.
+const RATE_LIMIT_COOLDOWN_HOURS = 6;
+
+// Short cooldown for non-429 failures (5xx, network, malformed JSON).
+// The next cron tick is at most 1h away, so 30 minutes means the ticker
+// is still considered "ready to try" on the next pass — we just don't
+// retry inside the same tick after a single failure.
+const TRANSIENT_COOLDOWN_MINUTES = 30;
 
 export class BackfillService {
   private task: ScheduledTask | null = null;
@@ -68,16 +90,28 @@ export class BackfillService {
     });
   }
 
+  /** Filter helper: return only tickers that are eligible to be retried
+   *  right now. A ticker is ineligible if it's in a cooldown window
+   *  (set after the last failed attempt) or if it's still marked as
+   *  "backfilling" by another worker. */
+  private isEligible(t: TrackedTicker, now: number): boolean {
+    const status: BackfillStatus = t.backfillStatus ?? "pending";
+    if (status !== "pending" && status !== "failed") return false;
+    if (t.nextBackfillAt) {
+      const until = Date.parse(t.nextBackfillAt);
+      if (Number.isFinite(until) && until > now) return false;
+    }
+    return true;
+  }
+
   /** Process the queue continuously until the first failure. Used on
    *  startup so a server restart catches up immediately; falls back to
    *  the conservative cron cadence after the first 429. */
   private async drainUntilFirstFailure(): Promise<void> {
     while (true) {
+      const now = Date.now();
       const tickers = await this.storage.listTickers();
-      const candidates = tickers.filter((t: TrackedTicker) => {
-        const status: BackfillStatus = t.backfillStatus ?? "pending";
-        return status === "pending" || status === "failed";
-      });
+      const candidates = tickers.filter((t) => this.isEligible(t, now));
       if (candidates.length === 0) return;
 
       const ticker = candidates[0]!;
@@ -88,7 +122,9 @@ export class BackfillService {
       );
       // If the ticker is still failed (or didn't move to ok), assume
       // the provider is rate-limiting us and stop draining. The cron
-      // will retry on the next tick.
+      // will retry on the next tick, and the cooldown we just wrote
+      // will keep both the next drain and the next cron from hammering
+      // it before the rate limit window expires.
       if (!after || after.backfillStatus === "failed") return;
       // Same status (shouldn't happen with our transitions, but safety
       // belt): break to avoid an infinite loop.
@@ -105,11 +141,9 @@ export class BackfillService {
    *  tickers, sequentially. Series processing (one at a time) keeps us
    *  polite to Yahoo even if it isn't currently throttling us. */
   async tick(): Promise<void> {
+    const now = Date.now();
     const tickers = await this.storage.listTickers();
-    const candidates = tickers.filter((t: TrackedTicker) => {
-      const status: BackfillStatus = t.backfillStatus ?? "pending";
-      return status === "pending" || status === "failed";
-    });
+    const candidates = tickers.filter((t) => this.isEligible(t, now));
     if (candidates.length === 0) return;
 
     const batch = candidates.slice(0, TICKERS_PER_CRON);
@@ -119,7 +153,8 @@ export class BackfillService {
   }
 
   /** Run one ticker immediately (used by tests and the dev endpoint).
-   *  Returns true if backfill succeeded. */
+   *  Returns true if backfill succeeded. Bypasses the cooldown so the
+   *  dev endpoint can force a retry when the user is debugging. */
   async backfillNow(symbol: string): Promise<boolean> {
     const upper = symbol.toUpperCase();
     const tickers = await this.storage.listTickers();
@@ -127,6 +162,9 @@ export class BackfillService {
     if (!ticker) return false;
     const status: BackfillStatus = ticker.backfillStatus ?? "pending";
     if (status === "backfilling") return false;
+    // Clear any cooldown before running so the dev endpoint isn't
+    // silently no-op'd by a leftover 429.
+    await this.storage.updateTicker(upper, { nextBackfillAt: undefined });
     await this.backfillTicker(ticker);
     const after = await this.storage.listTickers();
     const next = after.find((t) => t.ticker === upper);
@@ -160,6 +198,9 @@ export class BackfillService {
         backfillStatus: "ok",
         lastBackfillAt: new Date().toISOString(),
         lastBackfillError: undefined,
+        // Clear any leftover cooldown so a future failure (e.g. a stale
+        // Yahoo response) starts from a clean state.
+        nextBackfillAt: undefined,
       });
       // eslint-disable-next-line no-console
       log(
@@ -167,12 +208,26 @@ export class BackfillService {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown error";
+      // RateLimitError gets a long cooldown; everything else (5xx,
+      // network, malformed response) gets a short cooldown to avoid a
+      // busy-loop within the same tick. The cron tick is 1h away so
+      // 30 minutes is just a guardrail against the drain loop.
+      const cooldownMs = RateLimitError.is(err)
+        ? RATE_LIMIT_COOLDOWN_HOURS * 3_600_000
+        : TRANSIENT_COOLDOWN_MINUTES * 60_000;
+      const nextBackfillAt = new Date(Date.now() + cooldownMs).toISOString();
       await this.storage.updateTicker(ticker.ticker, {
         backfillStatus: "failed",
         lastBackfillError: message,
+        nextBackfillAt,
       });
       // eslint-disable-next-line no-console
-      log(`[backfill] ${ticker.ticker} FAILED: ${message}`);
+      log(
+        `[backfill] ${ticker.ticker} FAILED: ${message}` +
+          (RateLimitError.is(err)
+            ? ` (cooldown ${RATE_LIMIT_COOLDOWN_HOURS}h)`
+            : ` (cooldown ${TRANSIENT_COOLDOWN_MINUTES}m)`),
+      );
     }
   }
 }
